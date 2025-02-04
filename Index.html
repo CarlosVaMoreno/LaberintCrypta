@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laberint Crypta</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #333;
+            background-image: url('LaberintCrypta.png'); /* Imagen de fondo */
+            background-size: 100% 100%; /* Ajusta la imagen para ocupar todo el ancho y alto */
+            background-position: center; /* Centra la imagen */
+            background-repeat: no-repeat; /* Evita que se repita */
+        }
+        canvas {
+            border: 2px solid black;
+            display: block;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(211, 211, 211, 0.8); /* Fondo gris claro con transparencia */
+            color: black;
+            font-size: 16px;
+            font-family: Arial, sans-serif;
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 10; /* Asegura que esté encima del canvas */
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <span id="level">Nivel: 1</span> | 
+        <span id="score">Puntuación: 0</span> | 
+        <span id="energy">Energía: 3</span> <!-- Nueva línea para la energía -->
+    </div>
+    <canvas id="mazeCanvas"></canvas>
+    <script>
+        const cellSize = 20; // Tamaño de las celdas
+        let rows = 21;
+        let cols = 21;
+        let level = 1;
+        let maze = [];
+        let playerPosition = { row: 1, col: 1 };
+        let goals = [];
+        let score = 0;
+        let playerEnergy = 3; // Inicializa la energía del jugador
+
+        let exit = { row: 1, col: 1 }; // Salida inicial (entrada original)
+        let exitUnlocked = false;
+        let enemyPosition = { row: 5, col: 5 }; // Posición inicial del enemigo
+        let enemySpeed = 450; // Tiempo de retraso para el movimiento del enemigo (más alto es más lento)
+
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = cols * cellSize;
+        canvas.height = rows * cellSize;
+
+        const backgroundImage = new Image();
+        backgroundImage.src = 'CryptaSuelo2.jpeg'; // Carga la imagen de fondo
+        const wallImage = new Image();
+        wallImage.src = 'CryptaPared.png'; // Imagen para los muros
+
+        backgroundImage.onload = () => {
+            startGame();
+        };
+
+        function startGame() {
+            maze = generateMaze(rows, cols);
+            goals = generateGoals(maze, 5);
+            exitUnlocked = false; // Bloquea la salida al inicio de cada nivel
+            renderMaze();
+            setInterval(updateGame, 100); // Actualiza el estado del juego cada 100ms
+            setInterval(moveEnemy, enemySpeed); // Mueve al enemigo
+        }
+
+        function updateGame() {
+            movePlayer(); // Mueve al jugador
+            moveEnemy(); // Mueve al enemigo
+
+            // Comprobar si el jugador y el enemigo están en la misma posición
+            if (playerPosition.row === enemyPosition.row && playerPosition.col === enemyPosition.col) {
+                playerEnergy--; // El jugador pierde un punto de energía
+                if (playerEnergy <= 0) {
+                    alert('¡Game Over!'); // Muestra el mensaje de game over
+                    restartGame(); // Reinicia el juego
+                }
+            }
+
+            // Comprobar si el jugador ha recogido alguna moneda
+            const goalIndex = goals.findIndex(goal => goal.row === playerPosition.row && goal.col === playerPosition.col);
+            if (goalIndex >= 0) {
+                score++; // Aumenta la puntuación
+                goals.splice(goalIndex, 1); // Elimina la moneda recogida
+
+                // Si todas las monedas han sido recogidas, desbloquear la salida
+                if (goals.length === 0) {
+                    exitUnlocked = true; // Desbloquea la salida
+                    alert(`¡Nivel ${level} completado! Encuentra la salida para continuar.`);
+                }
+            }
+
+            // Renderiza el HUD y el estado del juego
+            renderHUD(); // Actualiza el HUD con la energía
+            renderGame(); // Actualiza el juego con la nueva información
+        }
+
+        function restartGame() {
+            level = 1;
+            score = 0;
+            playerEnergy = 3;
+            playerPosition = { row: 1, col: 1 };
+            maze = generateMaze(rows, cols);
+            goals = generateGoals(maze, 5);
+            exitUnlocked = false;
+            renderMaze();
+        }
+
+
+// Asegúrate de que el HUD muestra la energía correctamente
+function renderHUD() {
+    document.getElementById('level').textContent = `Nivel: ${level}`;
+    document.getElementById('score').textContent = `Puntuación: ${score}`;
+    document.getElementById('energy').textContent = `Energía: ${playerEnergy}`; // Muestra la energía actualizada
+}
+
+        function generateMaze(rows, cols) {
+            const maze = Array.from({ length: rows }, () => Array(cols).fill(1));
+            const stack = [];
+            const entrance = { row: 1, col: 1 };
+            maze[entrance.row][entrance.col] = 0;
+            stack.push(entrance);
+
+            while (stack.length > 0) {
+                const current = stack.pop();
+                const neighbors = getUnvisitedNeighbors(current, maze);
+
+                if (neighbors.length > 0) {
+                    stack.push(current);
+                    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    removeWall(current, next, maze);
+                    maze[next.row][next.col] = 0;
+                    stack.push(next);
+                }
+            }
+            return maze;
+        }
+
+        function getUnvisitedNeighbors(cell, maze) {
+            const directions = [
+                { row: -2, col: 0 },
+                { row: 2, col: 0 },
+                { row: 0, col: -2 },
+                { row: 0, col: 2 }
+            ];
+
+            const neighbors = [];
+            for (const dir of directions) {
+                const newRow = cell.row + dir.row;
+                const newCol = cell.col + dir.col;
+                if (
+                    newRow > 0 &&
+                    newRow < rows - 1 &&
+                    newCol > 0 &&
+                    newCol < cols - 1 &&
+                    maze[newRow][newCol] === 1
+                ) {
+                    neighbors.push({ row: newRow, col: newCol });
+                }
+            }
+            return neighbors;
+        }
+
+        function removeWall(current, next, maze) {
+            const wallRow = (current.row + next.row) / 2;
+            const wallCol = (current.col + next.col) / 2;
+            maze[wallRow][wallCol] = 0;
+        }
+
+        function renderHUD() {
+            document.getElementById('level').textContent = `Nivel: ${level}`;
+            document.getElementById('score').textContent = `Puntuación: ${score}`;
+            document.getElementById('energy').textContent = `Energía: ${playerEnergy}`; // Muestra la energía actualizada
+        }
+
+        function renderMaze() {
+            // Dibuja el fondo
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Limpia el canvas antes de dibujar
+            ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+
+            // Dibuja las celdas
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    drawCell(row, col, maze[row][col]);
+                }
+            }
+            // Dibuja los tesoros
+            goals.forEach(goal => drawGoal(goal.row, goal.col));
+
+            // Dibuja la salida si está desbloqueada
+            if (exitUnlocked) {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(
+                    exit.col * cellSize + cellSize / 4,
+                    exit.row * cellSize + cellSize / 4,
+                    cellSize / 2,
+                    cellSize / 2
+                );
+            }
+
+            // Dibuja al jugador
+            drawPlayer(playerPosition.row, playerPosition.col);
+
+            // Dibuja al enemigo
+            drawEnemy(enemyPosition.row, enemyPosition.col);
+
+            renderHUD();
+        }
+
+        function moveEnemy() {
+            const directions = [
+                { row: -1, col: 0 },
+                { row: 1, col: 0 },
+                { row: 0, col: -1 },
+                { row: 0, col: 1 }
+            ];
+
+            // Calcular la diferencia en las posiciones del jugador y el enemigo
+            const rowDiff = playerPosition.row - enemyPosition.row;
+            const colDiff = playerPosition.col - enemyPosition.col;
+
+            // Determinar la dirección más cercana al jugador
+            let move = { row: 0, col: 0 };
+            
+            if (Math.abs(rowDiff) > Math.abs(colDiff)) {
+                // El enemigo se moverá en la dirección vertical
+                move.row = rowDiff > 0 ? 1 : -1;
+            } else {
+                // El enemigo se moverá en la dirección horizontal
+                move.col = colDiff > 0 ? 1 : -1;
+            }
+
+            // Verificar si el movimiento es válido
+            const newRow = enemyPosition.row + move.row;
+            const newCol = enemyPosition.col + move.col;
+            
+            if (maze[newRow] && maze[newRow][newCol] === 0) {
+                enemyPosition.row = newRow;
+                enemyPosition.col = newCol;
+            }
+        }
+
+
+        function drawCell(row, col, type) {
+            if (type === 0) {
+                ctx.fillStyle = '#deb887'; // Color base (arena)
+                ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+                ctx.drawImage(backgroundImage, col * cellSize, row * cellSize, cellSize, cellSize);
+            } else if (type === 1) {
+                ctx.fillStyle = '#8b4513'; // Color base (muro)
+                ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+                ctx.drawImage(wallImage, col * cellSize, row * cellSize, cellSize, cellSize);
+            }
+        }
+
+        function drawGoal(row, col) {
+            ctx.fillStyle = 'yellow';
+            ctx.beginPath();
+            ctx.arc(
+                col * cellSize + cellSize / 2,
+                row * cellSize + cellSize / 2,
+                cellSize / 4,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+
+        function drawPlayer(row, col) {
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(
+                col * cellSize + cellSize / 4,
+                row * cellSize + cellSize / 4,
+                cellSize / 2,
+                cellSize / 2
+            );
+        }
+
+        function drawEnemy(row, col) {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(
+                col * cellSize + cellSize / 4,
+                row * cellSize + cellSize / 4,
+                cellSize / 2,
+                cellSize / 2
+            );
+        }
+
+        document.addEventListener('keydown', (event) => {
+            const moves = {
+                ArrowUp: { row: -1, col: 0 },
+                ArrowDown: { row: 1, col: 0 },
+                ArrowLeft: { row: 0, col: -1 },
+                ArrowRight: { row: 0, col: 1 }
+            };
+
+            const move = moves[event.key];
+            if (move) {
+                const newRow = playerPosition.row + move.row;
+                const newCol = playerPosition.col + move.col;
+
+                if (maze[newRow] && maze[newRow][newCol] === 0) {
+                    playerPosition.row = newRow;
+                    playerPosition.col = newCol;
+
+                    const goalIndex = goals.findIndex(goal => goal.row === newRow && goal.col === newCol);
+                    if (goalIndex >= 0) {
+                        score++;
+                        goals.splice(goalIndex, 1);
+
+                        if (goals.length === 0) {
+                            exitUnlocked = true; // Desbloquea la salida
+                            alert(`¡Nivel ${level} completado! Encuentra la salida para continuar.`);
+                        }
+                    }
+
+                    if (exitUnlocked && playerPosition.row === exit.row && playerPosition.col === exit.col) {
+                        alert(`¡Has completado el nivel ${level}!`);
+                        level++;
+                        startNewLevel();
+                    }
+
+                    renderMaze();
+                }
+            }
+        });
+
+        function startNewLevel() {
+    rows += 2;
+    cols += 2;
+    playerPosition = { row: 1, col: 1 };
+    maze = generateMaze(rows, cols);
+    goals = generateGoals(maze, 5);
+    exitUnlocked = false;
+
+    // Actualiza el tamaño del canvas
+    canvas.width = cols * cellSize;
+    canvas.height = rows * cellSize;
+
+    renderMaze();
+}
+
+
+        function generateGoals(maze, numGoals) {
+            const goals = [];
+            while (goals.length < numGoals) {
+                const row = Math.floor(Math.random() * rows);
+                const col = Math.floor(Math.random() * cols);
+                if (maze[row][col] === 0 && !goals.some(goal => goal.row === row && goal.col === col)) {
+                    goals.push({ row, col });
+                }
+            }
+            return goals;
+        }
+    </script>
+</body>
+</html>
